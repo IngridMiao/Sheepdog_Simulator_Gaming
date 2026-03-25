@@ -1,0 +1,83 @@
+import pygame
+from entity.sheep import Sheep
+from entity.sheepdog import SheepDog
+from entity.obstacle import Obstacle
+from utils.vector_math import Vector2
+
+class Simulation:
+    def __init__(self, screen_width, screen_height):
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        
+        # 1. 初始化實體 (Part 1 & 3: 至少兩個 Agent)
+        self.dog = SheepDog(screen_width // 4, screen_height // 2)
+        self.sheep = Sheep(screen_width // 2, screen_height // 2)
+        self.agents = [self.dog, self.sheep]
+        
+        # 2. 初始化障礙物 (Part 4: 至少三個障礙物，包含石頭與柵欄)
+        self.obstacles = [
+            Obstacle(400, 200, 60, 60, "STONE"),   # 石頭1
+            Obstacle(600, 500, 80, 80, "STONE"),   # 石頭2
+            Obstacle(200, 400, 150, 20, "FENCE"),  # 柵欄
+        ]
+        
+        # 模式與偵錯狀態
+        self.mode = "KINEMATIC"  # 預設模式
+        self.show_debug = True   # Part 4: 視覺化偵錯開關
+
+    def set_mode(self, mode_name):
+        """切換移動模式 (Kinematic / Steering / Combined)"""
+        self.mode = mode_name
+        print(f"Current Mode: {self.mode}")
+
+    def toggle_debug(self):
+        """切換視覺化偵錯顯示"""
+        self.show_debug = not self.show_debug
+
+    def update(self, dt):
+        """
+        核心更新循環
+        這裡未來會根據 self.mode 調用 behaviors/ 資料夾下的邏輯
+        """
+        # A. 根據當前模式計算行為 (這裡先留白，待後續實作 behaviors 後填入)
+        if self.mode == "KINEMATIC":
+            # 呼叫 kinematic.py
+            pass
+        elif self.mode == "STEERING":
+            # 呼叫 steering.py
+            pass
+        elif self.mode == "COMBINED":
+            # 呼叫 blender.py (Part 5)
+            pass
+
+        # B. 邊界檢查 (防止 Agent 跑出視窗)
+        for agent in self.agents:
+            self._handle_boundaries(agent)
+            agent.update(dt) # 執行物理更新
+
+    def _handle_boundaries(self, agent):
+        """簡單的邊界處理：若超出螢幕則從另一邊出現或反彈"""
+        if agent.pos.x < 0: agent.pos.x = self.screen_width
+        elif agent.pos.x > self.screen_width: agent.pos.x = 0
+        if agent.pos.y < 0: agent.pos.y = self.screen_height
+        elif agent.pos.y > self.screen_height: agent.pos.y = 0
+
+    def draw(self, screen):
+        """繪製所有環境元素"""
+        # 繪製障礙物
+        for obs in self.obstacles:
+            obs.draw(screen)
+            
+        # 繪製 Agent
+        for agent in self.agents:
+            agent.draw(screen, self.show_debug)
+        
+        # 繪製 UI 資訊 (當前模式)
+        self._draw_ui(screen)
+
+    def _draw_ui(self, screen):
+        font = pygame.font.SysFont("Arial", 24)
+        mode_text = font.render(f"Mode: {self.mode} (Press 1, 2, 3 to switch)", True, (255, 255, 255))
+        debug_text = font.render(f"Debug: {'ON' if self.show_debug else 'OFF'} (Press D)", True, (255, 255, 255))
+        screen.blit(mode_text, (20, 20))
+        screen.blit(debug_text, (20, 50))
