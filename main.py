@@ -40,7 +40,7 @@ def main():
         sim.update(dt)
 
         # 繪製
-        screen.fill((40, 80, 40)) # 白色背景
+        screen.fill((40, 80, 40)) # 草地背景
         sim.draw(screen)
         pygame.display.flip()
         
