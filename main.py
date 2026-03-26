@@ -9,7 +9,7 @@ def main():
     pygame.display.set_caption("Sheepdog Simulation: HW1")
 
     # 建立模擬引擎
-    sim = Simulation(screen)
+    sim = Simulation(screen_width, screen_height)
 
     # 控制影格率(FPS)；取得 delta time 以實現時間驅動
     clock = pygame.time.Clock()

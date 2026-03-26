@@ -3,6 +3,7 @@ from entity.sheep import Sheep
 from entity.sheepdog import SheepDog
 from entity.obstacle import Obstacle
 from utils.vector_math import Vector2
+from behaviors.kinematic import KinematicBehaviors
 
 class Simulation:
     def __init__(self, screen_width, screen_height):
@@ -13,6 +14,7 @@ class Simulation:
         self.dog = SheepDog(screen_width // 4, screen_height // 2)
         self.sheep = Sheep(screen_width // 2, screen_height // 2)
         self.agents = [self.dog, self.sheep]
+        self.wander_data = {"angle": 0.0} # 儲存羊的隨機狀態
         
         # 2. 初始化障礙物 (Part 4: 至少三個障礙物，包含石頭與柵欄)
         self.obstacles = [
@@ -42,6 +44,12 @@ class Simulation:
         # A. 根據當前模式計算行為 (這裡先留白，待後續實作 behaviors 後填入)
         if self.mode == "KINEMATIC":
             # 呼叫 kinematic.py
+            # 牧羊犬:seek 目前滑鼠位置
+            mouse_pos = Vector2(pygame.mouse.get_pos())
+            KinematicBehaviors.seek(self.dog, mouse_pos)
+
+            # 綿羊:wander
+            KinematicBehaviors.wander(self.sheep, dt, self.wander_data)
             pass
         elif self.mode == "STEERING":
             # 呼叫 steering.py
