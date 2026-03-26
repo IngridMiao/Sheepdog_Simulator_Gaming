@@ -1,9 +1,13 @@
 import pygame
+from behaviors.avoidance import AvoidanceBehaviors
 from entity.sheep import Sheep
 from entity.sheepdog import SheepDog
 from entity.obstacle import Obstacle
 from utils.vector_math import Vector2
 from behaviors.kinematic import KinematicBehaviors
+from behaviors.steering import SteeringBehaviors
+from behaviors.blender import BehaviorBlender
+
 
 class Simulation:
     def __init__(self, screen_width, screen_height):
@@ -41,27 +45,53 @@ class Simulation:
         核心更新循環
         這裡未來會根據 self.mode 調用 behaviors/ 資料夾下的邏輯
         """
+        mouse_pos = Vector2(pygame.mouse.get_pos()) # 取得滑鼠位置 (用於牧羊犬的目標)
         # A. 根據當前模式計算行為 (這裡先留白，待後續實作 behaviors 後填入)
         if self.mode == "KINEMATIC":
             # 呼叫 kinematic.py
             # 牧羊犬:seek 目前滑鼠位置
-            mouse_pos = Vector2(pygame.mouse.get_pos())
             KinematicBehaviors.seek(self.dog, mouse_pos)
-
             # 綿羊:wander
             KinematicBehaviors.wander(self.sheep, dt, self.wander_data)
             pass
         elif self.mode == "STEERING":
             # 呼叫 steering.py
+            # 牧羊犬: arrive
+            self.dog.accel += SteeringBehaviors.arrive(self.dog, mouse_pos)
+
+            # 綿羊: flee
+            sheep_force = SteeringBehaviors.flee(self.sheep, self.dog.pos, panic_radius=250.0)
+
+            # 如果沒有被嚇到，羊就原地不動或緩慢摩擦力減速
+            if sheep_force.length_squared() == 0:
+                self.sheep.vel *= 0.95 # 模擬摩擦力
+            else:
+                self.sheep.accel += sheep_force
             pass
         elif self.mode == "COMBINED":
             # 呼叫 blender.py (Part 5)
+            self.dog.accel += BehaviorBlender.blend_dog_behaviors(
+                self.dog, mouse_pos, self.obstacles
+            )
+            self.sheep.accel += BehaviorBlender.blend_sheep_behaviors(
+                self.sheep, self.dog, self.obstacles, self.wander_data
+            )
+            # 更新漫遊狀態的角度
+            KinematicBehaviors.wander(self.sheep, dt, self.wander_data)
             pass
 
         # B. 邊界檢查 (防止 Agent 跑出視窗)
         for agent in self.agents:
-            self._handle_boundaries(agent)
-            agent.update(dt) # 執行物理更新
+            # 如果不是 COMBINED 模式，加上避障力
+            if self.mode != "COMBINED":
+                avoid_force, _ = AvoidanceBehaviors.obstacle_avoidance(agent, self.obstacles)
+                agent.accel += avoid_force * 2.0 # 確保在普通 Steering 模式下也不會撞牆
+            
+            # 執行物理更新 (s = v * dt, v = a * dt)
+            agent.update(dt) 
+            
+            # 最後進行邊界檢查，確保不跑出螢幕
+            self._handle_boundaries(agent) 
 
     def _handle_boundaries(self, agent):
         """簡單的邊界處理：若超出螢幕則從另一邊出現或反彈"""
