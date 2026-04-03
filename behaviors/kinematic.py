@@ -19,6 +19,20 @@ class KinematicBehaviors:
             agent.vel = Vector2(0, 0)
 
     @staticmethod
+    def flee(agent, target_pos, panic_radius=200.0):
+        """
+        Kinematic Flee: 當目標進入恐慌半徑時，直接將速度背向目標逃離
+        """
+        desired_direction = agent.pos - target_pos
+        distance = desired_direction.length()
+        
+        if distance < panic_radius and distance > 0:
+            desired_direction.scale_to_length(agent.max_speed)
+            agent.vel = desired_direction
+            return True # 表示正在逃跑
+        return False
+
+    @staticmethod
     def wander(agent, dt, wander_state):
         """
         Kinematic Wander: 隨機改變朝向
