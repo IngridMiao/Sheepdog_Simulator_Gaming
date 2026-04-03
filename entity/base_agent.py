@@ -52,7 +52,12 @@ class BaseAgent:
 
     def draw(self, screen, show_debug=True):
         # 繪製軌跡
-        if len(self.breadcrumb_trail) > 1:
+        if hasattr(self, 'trail_image') and self.trail_image:
+            # 若有設定腳印圖片，則在每一個軌跡點上繪製腳印
+            for pos in self.breadcrumb_trail:
+                rect = self.trail_image.get_rect(center=(int(pos.x), int(pos.y)))
+                screen.blit(self.trail_image, rect)
+        elif len(self.breadcrumb_trail) > 1:
             pygame.draw.lines(screen, (150, 150, 150), False, self.breadcrumb_trail, 2)
 
         # 繪製 Agent 本體

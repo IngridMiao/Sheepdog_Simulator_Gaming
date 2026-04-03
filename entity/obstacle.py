@@ -12,20 +12,28 @@ class Obstacle:
         if self.type == "STONE":
             self.color = (128, 128, 128)  # 灰色
             self.radius = max(width, height) / 2 # 石頭以圓形處理
+            self.image = pygame.image.load("imgs/rock_snowy_1a_al1.svg").convert_alpha()
+            self.image = pygame.transform.scale(self.image, (int(width), int(height)))
         else: # FENCE
             self.color = (139, 69, 19)    # 棕色 (SaddleBrown)
             self.rect = pygame.Rect(x - width/2, y - height/2, width, height)
+            self.image = pygame.image.load("imgs/fence_barbed.png").convert_alpha()
+            self.image = pygame.transform.scale(self.image, (int(width), int(height)))
 
     def draw(self, screen):
-        if self.type == "STONE":
-            # 繪製石頭
-            pygame.draw.circle(screen, self.color, (int(self.pos.x), int(self.pos.y)), int(self.radius))
-            pygame.draw.circle(screen, (80, 80, 80), (int(self.pos.x), int(self.pos.y)), int(self.radius), 2)
-        
-        elif self.type == "FENCE":
-            # 繪製柵欄
-            pygame.draw.rect(screen, self.color, self.rect)
-            pygame.draw.rect(screen, (60, 30, 10), self.rect, 2) # 深棕色
+        if hasattr(self, 'image') and self.image:
+            rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+            screen.blit(self.image, rect)
+        else:
+            if self.type == "STONE":
+                # 繪製石頭
+                pygame.draw.circle(screen, self.color, (int(self.pos.x), int(self.pos.y)), int(self.radius))
+                pygame.draw.circle(screen, (80, 80, 80), (int(self.pos.x), int(self.pos.y)), int(self.radius), 2)
+            
+            elif self.type == "FENCE":
+                # 繪製柵欄
+                pygame.draw.rect(screen, self.color, self.rect)
+                pygame.draw.rect(screen, (60, 30, 10), self.rect, 2) # 深棕色
 
     def get_bounds(self):
         """用於碰撞偵測的邊界資訊"""

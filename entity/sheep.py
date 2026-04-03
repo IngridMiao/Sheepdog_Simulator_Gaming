@@ -9,3 +9,7 @@ class Sheep(BaseAgent):
         # load sheep image
         self.image = pygame.image.load("imgs/sheep.png").convert_alpha()
         self.image = pygame.transform.scale(self.image, (35, 35))
+
+        # load trail image
+        self.trail_image = pygame.image.load("imgs/sheepprint.png").convert_alpha()
+        self.trail_image = pygame.transform.scale(self.trail_image, (15, 15)) # 縮放腳印大小
