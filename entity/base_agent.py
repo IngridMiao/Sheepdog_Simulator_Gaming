@@ -55,10 +55,16 @@ class BaseAgent:
         if len(self.breadcrumb_trail) > 1:
             pygame.draw.lines(screen, (150, 150, 150), False, self.breadcrumb_trail, 2)
 
-        # 繪製 Agent 本體 (具有方向性的形狀)
-        points = [
-            self.pos + Vector2(self.radius, 0).rotate_rad(self.orientation),
-            self.pos + Vector2(-self.radius, -self.radius/2).rotate_rad(self.orientation),
-            self.pos + Vector2(-self.radius, self.radius/2).rotate_rad(self.orientation)
-        ]
-        pygame.draw.polygon(screen, self.color, points)
+        # 繪製 Agent 本體
+        if hasattr(self, 'image') and self.image:
+            # 若有設定圖片，則繪製圖片
+            rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+            screen.blit(self.image, rect)
+        else:
+            # 預設：繪製具有方向性的三角形
+            points = [
+                self.pos + Vector2(self.radius, 0).rotate_rad(self.orientation),
+                self.pos + Vector2(-self.radius, -self.radius/2).rotate_rad(self.orientation),
+                self.pos + Vector2(-self.radius, self.radius/2).rotate_rad(self.orientation)
+            ]
+            pygame.draw.polygon(screen, self.color, points)
