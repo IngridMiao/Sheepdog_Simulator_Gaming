@@ -42,6 +42,12 @@ class Simulation:
             Bush(700, 600)
         ]
         self.target_bush = None # 儲存綿羊當前的隨機草叢目標
+        self.idle_state = "WANDER" # 綿羊閒置狀態 ("WANDER" 或 "BUSH")
+        self.idle_timer = 0.0      # 閒置狀態計時器
+        
+        # 計時與任務狀態
+        self.elapsed_time = 0.0
+        self.task_completed = False
         
         # 模式與偵錯狀態
         self.mode = "KINEMATIC"  # 預設模式
@@ -56,6 +62,10 @@ class Simulation:
     def _reset_agents(self):
         """隨機重置所有 Agent 的位置與物理狀態"""
         self.target_bush = None # 重新開始時忘記草叢目標
+        self.idle_state = "WANDER"
+        self.idle_timer = 0.0
+        self.elapsed_time = 0.0
+        self.task_completed = False
         for agent in self.agents:
             agent.pos.x = random.randint(50, self.screen_width - 50)
             agent.pos.y = random.randint(50, self.screen_height - 50)
@@ -73,6 +83,13 @@ class Simulation:
         核心更新循環
         這裡未來會根據 self.mode 調用 behaviors/ 資料夾下的邏輯
         """
+        # 更新計時器與檢查任務是否完成
+        if not self.task_completed:
+            self.elapsed_time += dt
+            # 檢查羊是否進入柵欄內部範圍 (X: 770~930, Y: 260~440)
+            if 770 < self.sheep.pos.x < 930 and 260 < self.sheep.pos.y < 440:
+                self.task_completed = True
+
         mouse_pos = Vector2(pygame.mouse.get_pos()) # 取得滑鼠位置 (用於牧羊犬的目標)
         # A. 根據當前模式計算行為 (這裡先留白，待後續實作 behaviors 後填入)
         if self.mode == "KINEMATIC":
@@ -113,15 +130,33 @@ class Simulation:
                 self.sheep.accel += sheep_force
             pass
         elif self.mode == "COMBINED":
+            # 決定羊的閒置狀態 (每隔幾秒隨機切換 Wander 或 Seek Bush)
+            if self.sheep.pos.distance_to(self.dog.pos) < 300.0:
+                # 被狗追時，放棄一切吃草與漫遊計畫
+                self.target_bush = None
+                self.idle_state = "WANDER"
+            else:
+                self.idle_timer -= dt
+                if self.idle_timer <= 0:
+                    # 每 3 到 6 秒隨機改變一次心意
+                    self.idle_state = random.choice(["WANDER", "BUSH"])
+                    self.idle_timer = random.uniform(3.0, 6.0) 
+                    
+                    if self.idle_state == "BUSH" and self.bushes:
+                        self.target_bush = random.choice(self.bushes)
+                    else:
+                        self.target_bush = None
+
             # 呼叫 blender.py (Part 5)
             self.dog.accel += BehaviorBlender.blend_dog_behaviors(
                 self.dog, mouse_pos, self.obstacles
             )
             self.sheep.accel += BehaviorBlender.blend_sheep_behaviors(
-                self.sheep, self.dog, self.obstacles, self.wander_data
+                self.sheep, self.dog, self.obstacles, self.wander_data, self.target_bush
             )
-            # 更新漫遊狀態的角度
-            KinematicBehaviors.wander(self.sheep, dt, self.wander_data)
+            # 更新漫遊狀態的角度 (自行更新避免 Kinematic 邏輯直接覆寫速度)
+            current_angle = self.wander_data.get("angle", self.sheep.orientation)
+            self.wander_data["angle"] = current_angle + random.uniform(-0.5, 0.5)
             pass
 
         # B. 邊界檢查 (防止 Agent 跑出視窗)
@@ -248,5 +283,19 @@ class Simulation:
         font = pygame.font.SysFont("Arial", 24)
         mode_text = font.render(f"Mode: {self.mode} (Press 1, 2, 3 to switch)", True, (255, 255, 255))
         debug_text = font.render(f"Debug: {'ON' if self.show_debug else 'OFF'} (Press D)", True, (255, 255, 255))
+        time_text = font.render(f"Time: {self.elapsed_time:.1f} s", True, (255, 255, 255))
+        
         screen.blit(mode_text, (20, 20))
         screen.blit(debug_text, (20, 50))
+        screen.blit(time_text, (20, 80))
+        
+        # 繪製任務完成文字
+        if self.task_completed:
+            # 載入系統支援的中文字體
+            win_font = pygame.font.SysFont(["microsoftjhenghei", "simhei", "pingfang"], 64, bold=True)
+            win_text = win_font.render("任務完成！", True, (255, 215, 0)) # 金黃色
+            shadow_text = win_font.render("任務完成！", True, (0, 0, 0))   # 黑色陰影
+            
+            rect = win_text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
+            screen.blit(shadow_text, (rect.x + 3, rect.y + 3)) # 畫陰影
+            screen.blit(win_text, rect)                        # 畫本體
