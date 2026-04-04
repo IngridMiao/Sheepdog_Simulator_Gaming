@@ -14,7 +14,7 @@ class BehaviorBlender:
         W_IDLE = 0.3      # 沒事的時候才漫遊或找草叢，權重最低
         
         # 2. 計算各別的力
-        flee_force = SteeringBehaviors.flee(sheep, dog.pos, panic_radius=300.0)
+        flee_force = SteeringBehaviors.flee(sheep, dog.pos, panic_radius=200.0)
         
         # 避障力
         avoid_force, _ = AvoidanceBehaviors.obstacle_avoidance(sheep, obstacles)

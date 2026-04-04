@@ -11,11 +11,11 @@ class Obstacle:
         # 根據類型設定顏色
         if self.type == "STONE":
             self.color = (128, 128, 128)  # 灰色
-            self.radius = max(width, height) / 2 # 石頭以圓形處理
+            self.radius = max(width, height) / 2 
             self.image = pygame.image.load("imgs/rock_snowy_1a_al1.svg").convert_alpha()
             self.image = pygame.transform.scale(self.image, (int(width), int(height)))
         else: # FENCE
-            self.color = (139, 69, 19)    # 棕色 (SaddleBrown)
+            self.color = (139, 69, 19)    
             self.rect = pygame.Rect(x - width/2, y - height/2, width, height)
             self.image = pygame.image.load("imgs/fence_barbed.png").convert_alpha()
             self.image = pygame.transform.scale(self.image, (int(width), int(height)))
