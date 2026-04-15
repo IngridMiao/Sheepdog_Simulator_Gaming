@@ -55,7 +55,7 @@ class Dijkstra:
 
         # dist[row][col] = 從起點到該格的最短已知 cost
         INF = float('inf')
-        dist = [[INF] * self.grid.cols for _ in range(self.grid.rows)]
+        dist = [[INF] * self.grid.cols for _ in range(self.grid.rows)]  #一開始所有路徑皆為無限大
         dist[start_row][start_col] = 0.0
 
         # came_from[row][col] = 前驅格子 (col, row)，用於重建路徑

@@ -16,7 +16,7 @@ A* 最短路徑算法，支援兩種 heuristic：
      - clearance 越低（越靠近牆）→ penalty 越大 → 搜尋傾向走開闊通道
      - 讓羊在規劃路徑時自然避開貼牆走法，符合動物直覺
      - 注意：加入 penalty 後 heuristic 不再保證 admissible，
-       但在實務上路徑品質更好，可作為報告的 admissibility vs. quality 討論點
+       但在實務上路徑品質更好，可作為報告的 admissibility vs. quality
 
 設計說明：
   A* 的搜尋函式接受 heuristic="EUCLIDEAN" 或 "CLEARANCE" 參數，
