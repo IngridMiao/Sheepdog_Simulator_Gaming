@@ -287,11 +287,10 @@ class Simulation:
                             self.target_bush_a1 = None
             else:
                 # 選目標草叢（排除已吃過的）
-                if self.target_bush_a1 is None:
-                    remaining = [b for b in self.bushes
-                                    if id(b) not in self.a1_eaten_bushes]
-                    if remaining:
-                        self.target_bush_a1 = random.choice(remaining)
+                remaining = [b for b in self.bushes
+                                 if id(b) not in self.a1_eaten_bushes]
+                if self.target_bush_a1 is None and remaining:
+                    self.target_bush_a1 = random.choice(remaining)
                 # 向草叢走
                 if self.target_bush_a1:
                     KinematicBehaviors.seek(self.sheep, self.target_bush_a1.pos)
@@ -395,8 +394,13 @@ class Simulation:
             self.waypoint_graph.draw_graph(screen)
 
         # ── 草叢 ─────────────────────────────────────────────────────
+        # NAVIGATION 模式用 sheep.eaten_bushes，A1 模式用 a1_eaten_bushes
+        if self.mode == "NAVIGATION":
+            eaten_set = self.sheep.eaten_bushes
+        else:
+            eaten_set = self.a1_eaten_bushes
         for bush in self.bushes:
-            if id(bush) not in self.sheep.eaten_bushes:
+            if id(bush) not in eaten_set:
                 bush.draw(screen)
 
         # ── 障礙物 ───────────────────────────────────────────────────
@@ -432,7 +436,9 @@ class Simulation:
             (f"Mode: {self.mode}  (1=Kinematic 2=Steering 3=Navigation)", (255,255,255)),
             (f"Algo: {algo_label}  Follower: {self.follower.strategy}  (P=cycle  F=toggle)", (200,230,255)),
             (f"Time: {self.elapsed_time:.1f}s   "
-             f"Bushes eaten: {self.sheep.eaten_count}/{len(self.bushes)}", (200,255,200)),
+             f"Bushes eaten: "
+             f"{len(self.a1_eaten_bushes) if self.mode != 'NAVIGATION' else self.sheep.eaten_count}"
+             f" / {len(self.bushes)}", (200,255,200)),
             (f"Debug(D)  Grid(G)  Clearance(C)  Waypoint(W)  Reset(R)", (180,180,180)),
         ]
 
