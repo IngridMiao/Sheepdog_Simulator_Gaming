@@ -182,6 +182,16 @@ class Sheep(BaseAgent):
             self.target_bush.pos.x, self.target_bush.pos.y
         )
 
+        # ── 若終點格是 blocked，BFS 找最近的可通行鄰格 ──────────────
+        if self.grid_map.is_blocked(gc, gr):
+            gc, gr = self._nearest_open_cell(gc, gr)
+ 
+        # 找不到任何可通行格（極端情況：草叢被完全封死）
+        if gc is None:
+            self.eaten_bushes.add(id(self.target_bush))
+            self.state = self.STATE_CHOOSE
+            return Vector2(0, 0)
+
         # 執行 pathfinding
         if self.pathfind_algo == "ASTAR":
             path, cost = self.astar.search(sc, sr, gc, gr,
@@ -199,6 +209,31 @@ class Sheep(BaseAgent):
         self.follower.set_path(path)
         self.state = self.STATE_FOLLOW
         return Vector2(0, 0)
+    
+    def _nearest_open_cell(self, col, row, max_radius=3):
+        """
+        BFS 從 (col, row) 向外擴展，找到最近的可通行格。
+        max_radius：最多往外找幾格（預設 3，約 192px）。
+        找不到則回傳 (None, None)。
+        """
+        from collections import deque
+        visited = set()
+        queue = deque([(col, row, 0)])
+        visited.add((col, row))
+ 
+        while queue:
+            c, r, dist = queue.popleft()
+            if dist > max_radius:
+                break
+            if not self.grid_map.is_blocked(c, r):
+                return c, r
+            for dc, dr in [(0,-1),(0,1),(-1,0),(1,0)]:
+                nc, nr = c+dc, r+dr
+                if (nc, nr) not in visited and self.grid_map.is_valid(nc, nr):
+                    visited.add((nc, nr))
+                    queue.append((nc, nr, dist+1))
+ 
+        return None, None
 
     def _update_following(self, dt):
         """
