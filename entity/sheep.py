@@ -170,6 +170,11 @@ class Sheep(BaseAgent):
         """
         呼叫 A* / Dijkstra 規劃路徑，並載入 PathFollower。
         規劃完成後立刻切換到 FOLLOWING。
+
+        
+        若目標草叢所在格子剛好是 blocked（草叢座標與障礙重疊），
+        會用 BFS 向外找最近的可通行格作為替代終點，
+        而不是直接放棄這個草叢。
         """
         if self.target_bush is None:
             self.state = self.STATE_CHOOSE
@@ -339,8 +344,11 @@ class Sheep(BaseAgent):
         if not show_debug:
             return
 
-        # 路徑視覺化（金色連線）
-        if self.follower and len(self.follower.path) >= 2:
+        # 路徑視覺化（金色連線）—— 只在 NAVIGATION 模式下顯示
+        # STEERING / KINEMATIC 模式下 follower 可能殘留舊路徑，不應顯示
+        if (self.follower and len(self.follower.path) >= 2
+                and self.state in (self.STATE_FOLLOW, self.STATE_EAT,
+                                   self.STATE_CHOOSE, self.STATE_PATH)):
             self.follower.draw_debug(
                 screen, self.pos.x, self.pos.y,
                 path_color=(255, 215, 0),
@@ -348,19 +356,22 @@ class Sheep(BaseAgent):
                 node_color=(200, 200, 50)
             )
 
-        # 狀態文字（羊頭上）
-        font = pygame.font.SysFont("Arial", 13)
-        state_colors = {
-            self.STATE_CHOOSE : (200, 200, 200),
-            self.STATE_PATH   : (100, 200, 255),
-            self.STATE_FOLLOW : (100, 255, 100),
-            self.STATE_EAT    : (255, 200, 50),
-            self.STATE_FLEE   : (255, 80,  80),
-            self.STATE_WIN    : (255, 215, 0),
-        }
-        color = state_colors.get(self.state, (255, 255, 255))
-        label = font.render(self.state, True, color)
-        screen.blit(label, (int(self.pos.x) - 30, int(self.pos.y) - 35))
+        # 狀態文字（只在 NAVIGATION 狀態機的狀態下顯示）
+        nav_states = {self.STATE_CHOOSE, self.STATE_PATH, self.STATE_FOLLOW,
+                      self.STATE_EAT, self.STATE_FLEE, self.STATE_WIN}
+        if self.state in nav_states:
+            font = pygame.font.SysFont("Arial", 13)
+            state_colors = {
+                self.STATE_CHOOSE : (200, 200, 200),
+                self.STATE_PATH   : (100, 200, 255),
+                self.STATE_FOLLOW : (100, 255, 100),
+                self.STATE_EAT    : (255, 200, 50),
+                self.STATE_FLEE   : (255, 80,  80),
+                self.STATE_WIN    : (255, 215, 0),
+            }
+            color = state_colors.get(self.state, (255, 255, 255))
+            label = font.render(self.state, True, color)
+            screen.blit(label, (int(self.pos.x) - 30, int(self.pos.y) - 35))
 
         # 目標草叢連線（虛線用短線段模擬）
         if self.target_bush and self.state in (self.STATE_FOLLOW, self.STATE_EAT):

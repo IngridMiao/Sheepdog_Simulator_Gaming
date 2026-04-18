@@ -111,10 +111,13 @@ class Simulation:
         self.result         = None   # None | "DOG_WIN" | "SHEEP_WIN"
 
         # ── Assignment 1 相容用（KINEMATIC / STEERING 模式）─────────
-        self.wander_data  = {"angle": 0.0}
-        self.target_bush_a1 = None
-        self.idle_state   = "WANDER"
-        self.idle_timer   = 0.0
+        self.wander_data     = {"angle": 0.0}
+        self.target_bush_a1  = None
+        self.idle_state      = "WANDER"
+        self.idle_timer      = 0.0
+        self.a1_eating       = False
+        self.a1_eat_timer    = 0.0
+        self.a1_eaten_bushes = set()
 
     # ------------------------------------------------------------------ #
     #  障礙物定義（Assignment 2 新地圖）                                   #
@@ -204,6 +207,15 @@ class Simulation:
         self.idle_state    = "WANDER"
         self.idle_timer    = 0.0
 
+        # A1 模式吃草計時器
+        self.a1_eating       = False   # 是否正在吃草
+        self.a1_eat_timer    = 0.0     # 剩餘吃草時間
+        self.a1_eaten_bushes = set()   # 已吃過的草叢 id
+
+        # 清空 follower 殘留路徑，防止切換模式時顯示舊路徑
+        if hasattr(self, 'follower') and self.follower:
+            self.follower.set_path([])
+
         # 重置 agent 位置
         self.dog.pos   = Vector2(96, 480)
         self.dog.vel   = Vector2(0, 0)
@@ -260,29 +272,70 @@ class Simulation:
             self.sheep.accel += nav_force
 
         elif self.mode == "KINEMATIC":
-            # Assignment 1 相容
+            # Assignment 1 相容（加上吃草邏輯）
             is_fleeing = KinematicBehaviors.flee(
                 self.sheep, self.dog.pos, panic_radius=100.0)
             if not is_fleeing:
-                KinematicBehaviors.wander(self.sheep, dt, self.wander_data)
+                # 若正在吃草，停下來計時
+                if self.a1_eating:
+                    self.sheep.vel *= 0.85
+                    self.a1_eat_timer -= dt
+                    if self.a1_eat_timer <= 0:
+                        self.a1_eating = False
+                        if self.target_bush_a1:
+                            self.a1_eaten_bushes.add(id(self.target_bush_a1))
+                            self.target_bush_a1 = None
+            else:
+                # 選目標草叢（排除已吃過的）
+                if self.target_bush_a1 is None:
+                    remaining = [b for b in self.bushes
+                                    if id(b) not in self.a1_eaten_bushes]
+                    if remaining:
+                        self.target_bush_a1 = random.choice(remaining)
+                # 向草叢走
+                if self.target_bush_a1:
+                    KinematicBehaviors.seek(self.sheep, self.target_bush_a1.pos)
+                    if self.sheep.pos.distance_to(self.target_bush_a1.pos) < 35:
+                        self.a1_eating    = True
+                        self.a1_eat_timer = 2.0
+                else:
+                    # 所有草叢吃完，漫遊
+                    KinematicBehaviors.wander(self.sheep, dt, self.wander_data)
 
         elif self.mode == "STEERING":
-            # Assignment 1 相容
+            # Assignment 1 相容（加上吃草計時邏輯）
             sheep_force = SteeringBehaviors.flee(
                 self.sheep, self.dog.pos, panic_radius=200.0)
-            if sheep_force.length_squared() == 0:
-                if self.bushes:
-                    if self.target_bush_a1 is None:
-                        self.target_bush_a1 = random.choice(self.bushes)
-                    self.sheep.accel += SteeringBehaviors.arrive(
-                        self.sheep, self.target_bush_a1.pos, slow_radius=80.0)
-                    if self.sheep.pos.distance_to(self.target_bush_a1.pos) < 30:
-                        self.sheep.vel *= 0.9
-                else:
-                    self.sheep.vel *= 0.95
-            else:
+            if sheep_force.length_squared() > 0:
+                # 被嚇到：放棄當前草叢，flee
+                self.a1_eating      = False
                 self.target_bush_a1 = None
-                self.sheep.accel += sheep_force
+                self.sheep.accel   += sheep_force
+            else:
+                # 安全：執行吃草邏輯
+                if self.a1_eating:
+                    # 吃草中：原地減速計時
+                    self.sheep.vel   *= 0.85
+                    self.a1_eat_timer -= dt
+                    if self.a1_eat_timer <= 0:
+                        self.a1_eating = False
+                        if self.target_bush_a1:
+                            self.a1_eaten_bushes.add(id(self.target_bush_a1))
+                            self.target_bush_a1 = None
+                else:
+                    # 選目標草叢（排除已吃過的）
+                    remaining = [b for b in self.bushes
+                                 if id(b) not in self.a1_eaten_bushes]
+                    if remaining:
+                        if self.target_bush_a1 is None:
+                            self.target_bush_a1 = random.choice(remaining)
+                        self.sheep.accel += SteeringBehaviors.arrive(
+                            self.sheep, self.target_bush_a1.pos, slow_radius=80.0)
+                        if self.sheep.pos.distance_to(self.target_bush_a1.pos) < 35:
+                            self.a1_eating    = True
+                            self.a1_eat_timer = 2.0
+                    else:
+                        self.sheep.vel *= 0.95
 
         # ── 避障（非 NAVIGATION 模式，NAVIGATION 由 pathfinding 處理）
         if self.mode != "NAVIGATION":
@@ -316,6 +369,12 @@ class Simulation:
                 and self.sheep.state == Sheep.STATE_WIN):
             self.result = "SHEEP_WIN"
             return
+        
+        # 羊獲勝（KINEMATIC / STEERING）：吃完所有草叢
+        if self.mode in ("KINEMATIC", "STEERING"):
+            if len(self.a1_eaten_bushes) >= len(self.bushes):
+                self.result = "SHEEP_WIN"
+                return
 
         # 狗獲勝：羊進入羊圈範圍（X:770~930, Y:260~440）
         sx, sy = self.sheep.pos.x, self.sheep.pos.y
@@ -347,6 +406,10 @@ class Simulation:
         # ── Agent ────────────────────────────────────────────────────
         for agent in self.agents:
             agent.draw(screen, self.show_debug)
+
+        # ── A1 模式吃草進度條（KINEMATIC / STEERING）────────────────
+        if self.mode in ("KINEMATIC", "STEERING") and self.a1_eating:
+            self._draw_a1_eating_bar(screen)
 
         # ── UI ───────────────────────────────────────────────────────
         self._draw_ui(screen)
@@ -384,6 +447,19 @@ class Simulation:
                 (255, 220, 80) if self.sheep.state == Sheep.STATE_FLEE
                 else (100, 255, 100))
             screen.blit(state_surf, (12, 108))
+
+    def _draw_a1_eating_bar(self, screen):
+        """KINEMATIC / STEERING 模式下的吃草進度條（畫在羊頭上方）"""
+        if not self.target_bush_a1:
+            return
+        sx = int(self.sheep.pos.x)
+        sy = int(self.sheep.pos.y)
+        progress = max(0.0, 1.0 - self.a1_eat_timer / 2.0)
+        bar_w = 40
+        pygame.draw.rect(screen, (80, 80, 80),
+                         (sx - bar_w//2, sy - 45, bar_w, 5))
+        pygame.draw.rect(screen, (100, 220, 100),
+                         (sx - bar_w//2, sy - 45, int(bar_w * progress), 5))
 
     def _draw_result(self, screen):
         try:
