@@ -17,16 +17,44 @@ entity/sheep.py  (Assignment 2 修改版)
   - 保留 draw() 介面不變，額外增加狀態文字 debug 顯示
 """
 
+"""
+entity/sheep.py  (Assignment 3 修改版)
+
+在 Assignment 2 的狀態機基礎上，新增三種決策架構來選擇目標草叢：
+
+  RANDOM   ── 原版隨機選擇（baseline）
+  RULE     ── 規則式決策（RuleDecision）
+  UTILITY  ── 效用函數（UtilitySystem）
+  ADAPTIVE ── 自適應效用（AdaptiveUtility，包裝 UtilitySystem）
+
+飽腹感（SatiationTracker）在四種架構下都存在，
+差別在於不同架構對飽腹感的使用方式：
+  RANDOM   → 完全忽略
+  RULE     → 觸發規則 R2 / R3 的門檻條件
+  UTILITY  → 直接作為效用分項（w_satiation * s_satiation）
+  ADAPTIVE → 同 UTILITY，但 w_satiation 會隨飢餓/逃跑事件動態調整
+
+新增按鍵（由 simulation.py 傳遞）：
+  T → 循環切換決策架構
+"""
+
 import pygame
-import random
+import random as py_random
 from entity.base_agent import BaseAgent
 from utils.vector_math import Vector2
 from behaviors.steering import SteeringBehaviors
 
+# ── 決策模組 ──────────────────────────────────────────────────────────────
+from decision.satiation      import SatiationTracker
+from decision.utility_system import UtilitySystem
+from decision.rule_decision  import RuleDecision
+from decision.adaptive_utility import AdaptiveUtility
+from decision.decision_logger  import DecisionLogger
+
 
 class Sheep(BaseAgent):
 
-    # 狀態常數
+    # ── 狀態常數 ─────────────────────────────────────────────────────
     STATE_CHOOSE   = "CHOOSE_BUSH"
     STATE_PATH     = "PATHFINDING"
     STATE_FOLLOW   = "FOLLOWING"
@@ -34,178 +62,225 @@ class Sheep(BaseAgent):
     STATE_FLEE     = "FLEEING"
     STATE_WIN      = "WIN"
 
-    # 行為參數
-    EAT_DURATION   = 2.0    # 秒：在草叢旁停留多久才算吃完
-    FLEE_DURATION  = 1.2    # 秒：flee 持續時間
-    PANIC_RADIUS   = 120.0  # px：狗進入此範圍才觸發 flee
-    ARRIVE_SLOW_R  = 60.0   # px：SteeringBehaviors.arrive 的減速半徑
-    BUSH_REACH_R   = 40.0   # px：距草叢多近算「抵達」
+    # ── 決策架構清單 ─────────────────────────────────────────────────
+    DECISION_ARCHS = ["RANDOM", "RULE", "UTILITY", "ADAPTIVE"]
+
+    # ── 行為參數 ─────────────────────────────────────────────────────
+    EAT_DURATION   = 2.0
+    FLEE_DURATION  = 1.2
+    PANIC_RADIUS   = 120.0
+    ARRIVE_SLOW_R  = 60.0
+    BUSH_REACH_R   = 40.0
 
     def __init__(self, x, y):
         super().__init__(x, y, (255, 255, 255))
         self.max_speed = 110.0
 
-        # 圖片
         self.image = pygame.image.load("imgs/sheep.png").convert_alpha()
         self.image = pygame.transform.scale(self.image, (35, 35))
         self.trail_image = pygame.image.load("imgs/sheepprint.png").convert_alpha()
         self.trail_image = pygame.transform.scale(self.trail_image, (15, 15))
 
-        # ── Navigation 系統（由 Simulation 注入）────────────────────
-        # 在 simulation.py 建立後呼叫 sheep.setup_navigation(grid, astar, follower)
-        self.grid_map   = None
-        self.astar      = None
-        self.follower   = None   # PathFollower 實例
+        # ── Navigation 系統（由 Simulation 注入）─────────────────────
+        self.grid_map  = None
+        self.astar     = None
+        self.dijkstra  = None
+        self.follower  = None
 
         # ── 狀態機 ───────────────────────────────────────────────────
         self.state        = self.STATE_CHOOSE
-        self._state_timer = 0.0   # 通用計時器（EATING / FLEEING 用）
+        self._state_timer = 0.0
 
         # ── 草叢管理 ─────────────────────────────────────────────────
-        self.all_bushes      = []   # 所有草叢（Bush 物件列表，由 Simulation 設定）
-        self.eaten_bushes    = set()  # 已吃過的 Bush id（用 id() 區分）
-        self.target_bush     = None   # 當前目標草叢
+        self.all_bushes   = []
+        self.eaten_bushes = set()
+        self.target_bush  = None
 
-        # ── 算法選擇（可在 Simulation 切換，預設 A* Euclidean）────────
-        self.pathfind_algo  = "ASTAR"       # "ASTAR" | "DIJKSTRA"
-        self.heuristic      = "EUCLIDEAN"   # "EUCLIDEAN" | "CLEARANCE"
+        # ── Pathfinding 設定 ─────────────────────────────────────────
+        self.pathfind_algo = "ASTAR"
+        self.heuristic     = "EUCLIDEAN"
+        self.current_path  = []
 
-        # ── 當前路徑（供視覺化用）───────────────────────────────────
-        self.current_path   = []
+        # ── 決策系統（在 setup_navigation 後才建立）──────────────────
+        self.decision_arch  = "UTILITY"   # 預設架構
+        self._arch_idx      = self.DECISION_ARCHS.index("UTILITY")
+
+        self.satiation_tracker = None
+        self.utility_system    = None
+        self.rule_system       = None
+        self.adaptive_system   = None
+        self.decision_logger   = DecisionLogger()
+
+        # ── 供 adaptive 用：追蹤「剛吃完」旗標 ──────────────────────
+        self._just_ate = False
+
+        # ── 遊戲時間（由 update_navigation 累積）────────────────────
+        self._game_time = 0.0
 
     # ------------------------------------------------------------------ #
-    #  初始化介面（由 Simulation 呼叫）                                     #
+    #  初始化介面                                                          #
     # ------------------------------------------------------------------ #
 
     def setup_navigation(self, grid_map, astar, dijkstra, follower, bushes):
-        """
-        注入 navigation 系統。在 Simulation.__init__ 建立完所有物件後呼叫。
-
-        grid_map  : GridMap
-        astar     : AStar
-        dijkstra  : Dijkstra
-        follower  : PathFollower
-        bushes    : [Bush, ...] 所有草叢列表
-        """
-        self.grid_map  = grid_map
-        self.astar     = astar
-        self.dijkstra  = dijkstra
-        self.follower  = follower
+        self.grid_map   = grid_map
+        self.astar      = astar
+        self.dijkstra   = dijkstra
+        self.follower   = follower
         self.all_bushes = bushes
         self.eaten_bushes.clear()
-        self.target_bush = None
-        self.state = self.STATE_CHOOSE
+        self.target_bush  = None
+        self.current_path = []
+        self.state        = self.STATE_CHOOSE
+        self._game_time   = 0.0
+
+        # ── 建立決策系統 ─────────────────────────────────────────────
+        self.satiation_tracker = SatiationTracker(bushes)
+
+        self.utility_system = UtilitySystem(self.satiation_tracker)
+        self.rule_system    = RuleDecision(self.satiation_tracker)
+        self.adaptive_system = AdaptiveUtility(self.utility_system)
+
+        self.decision_logger.reset()
 
     def reset_navigation(self):
-        """重置草叢記憶與狀態（切換 Demo 模式時用）"""
         self.eaten_bushes.clear()
         self.target_bush  = None
         self.current_path = []
         self.state        = self.STATE_CHOOSE
         self._state_timer = 0.0
+        self._game_time   = 0.0
         if self.follower:
             self.follower.set_path([])
+        if self.satiation_tracker and self.all_bushes:
+            self.satiation_tracker.reset(self.all_bushes)
+        if self.adaptive_system:
+            self.adaptive_system._hunger_timer = 0.0
+        self.decision_logger.reset()
 
     # ------------------------------------------------------------------ #
-    #  主更新（每幀由 Simulation 呼叫）                                     #
+    #  決策架構切換                                                        #
+    # ------------------------------------------------------------------ #
+
+    def cycle_decision_arch(self):
+        self._arch_idx    = (self._arch_idx + 1) % len(self.DECISION_ARCHS)
+        self.decision_arch = self.DECISION_ARCHS[self._arch_idx]
+        print(f"[Sheep] Decision arch: {self.decision_arch}")
+
+    # ------------------------------------------------------------------ #
+    #  主更新                                                              #
     # ------------------------------------------------------------------ #
 
     def update_navigation(self, dt, dog_pos):
-        """
-        更新狀態機與 steering force。
-        回傳 steering force (Vector2)，由 Simulation 加到 self.accel。
-
-        dog_pos : Vector2，牧羊犬當前位置
-        """
         if self.grid_map is None:
             return Vector2(0, 0)
 
+        self._game_time += dt
+        self._just_ate   = False
         force = Vector2(0, 0)
 
-        # ── 任何狀態下：偵測狗是否進入 panic radius ────────────────
+        # 自適應更新（每幀都跑，與狀態無關）
+        if self.adaptive_system:
+            self.adaptive_system.update(dt, just_ate=False)  # just_ate 在 EATING 完成時單獨觸發
+
+        # 任何狀態下偵測 panic
         dog_dist = self.pos.distance_to(dog_pos)
         if (self.state not in (self.STATE_FLEE, self.STATE_WIN)
                 and dog_dist < self.PANIC_RADIUS):
             self._enter_flee()
 
-        # ── 狀態分派 ─────────────────────────────────────────────
-        if self.state == self.STATE_CHOOSE:
-            force = self._update_choose()
-
-        elif self.state == self.STATE_PATH:
-            force = self._update_pathfinding()
-
-        elif self.state == self.STATE_FOLLOW:
-            force = self._update_following(dt)
-
-        elif self.state == self.STATE_EAT:
-            force = self._update_eating(dt)
-
-        elif self.state == self.STATE_FLEE:
-            force = self._update_fleeing(dt, dog_pos)
-
-        elif self.state == self.STATE_WIN:
-            # 原地停止
-            self.vel *= 0.9
+        if   self.state == self.STATE_CHOOSE: force = self._update_choose(dog_pos)
+        elif self.state == self.STATE_PATH:   force = self._update_pathfinding()
+        elif self.state == self.STATE_FOLLOW: force = self._update_following(dt)
+        elif self.state == self.STATE_EAT:    force = self._update_eating(dt)
+        elif self.state == self.STATE_FLEE:   force = self._update_fleeing(dt, dog_pos)
+        elif self.state == self.STATE_WIN:    self.vel *= 0.9
 
         return force
 
     # ------------------------------------------------------------------ #
-    #  各狀態的更新邏輯                                                     #
+    #  狀態更新                                                            #
     # ------------------------------------------------------------------ #
 
-    def _update_choose(self):
-        """選擇下一個未吃過的草叢，立刻進入 PATHFINDING"""
+    def _update_choose(self, dog_pos):
         remaining = [b for b in self.all_bushes if id(b) not in self.eaten_bushes]
-
         if not remaining:
             self.state = self.STATE_WIN
             return Vector2(0, 0)
 
-        self.target_bush = random.choice(remaining)
+        chosen = self._decide(remaining, dog_pos)
+        self.target_bush = chosen
         self.state = self.STATE_PATH
-        return Vector2(0, 0)  # 路徑規劃下一幀執行（避免同幀過重）
+        return Vector2(0, 0)
+
+    def _decide(self, remaining, dog_pos):
+        """
+        根據當前決策架構從 remaining 中選出目標草叢。
+        同時把決策記錄進 decision_logger。
+        """
+        arch = self.decision_arch
+
+        if arch == "RANDOM":
+            chosen = py_random.choice(remaining)
+            rule_fired     = None
+            utility_scores = None
+
+        elif arch == "RULE":
+            chosen = self.rule_system.choose(self.pos, remaining, dog_pos)
+            rule_fired     = self.rule_system.last_rule
+            utility_scores = None
+
+        elif arch == "UTILITY":
+            chosen = self.utility_system.choose(self.pos, remaining, dog_pos)
+            rule_fired     = None
+            utility_scores = [s["total"] for s in self.utility_system.last_scores]
+
+        elif arch == "ADAPTIVE":
+            # ADAPTIVE 共用同一個 UtilitySystem 實例（已被 AdaptiveUtility 調整過權重）
+            chosen = self.utility_system.choose(self.pos, remaining, dog_pos)
+            rule_fired     = None
+            utility_scores = [s["total"] for s in self.utility_system.last_scores]
+
+        else:
+            chosen = py_random.choice(remaining)
+            rule_fired     = None
+            utility_scores = None
+
+        # 記錄
+        self.decision_logger.log_choice(
+            t               = self._game_time,
+            arch            = arch,
+            chosen_bush     = chosen,
+            all_bushes      = self.all_bushes,
+            satiation_tracker = self.satiation_tracker,
+            sheep_pos       = self.pos,
+            dog_pos         = dog_pos,
+            rule_fired      = rule_fired,
+            utility_scores  = utility_scores,
+        )
+        return chosen
 
     def _update_pathfinding(self):
-        """
-        呼叫 A* / Dijkstra 規劃路徑，並載入 PathFollower。
-        規劃完成後立刻切換到 FOLLOWING。
-
-        
-        若目標草叢所在格子剛好是 blocked（草叢座標與障礙重疊），
-        會用 BFS 向外找最近的可通行格作為替代終點，
-        而不是直接放棄這個草叢。
-        """
         if self.target_bush is None:
             self.state = self.STATE_CHOOSE
             return Vector2(0, 0)
 
-        # 起點：羊當前位置
         sc, sr = self.grid_map.cell_of(self.pos.x, self.pos.y)
-        # 終點：目標草叢位置
-        gc, gr = self.grid_map.cell_of(
-            self.target_bush.pos.x, self.target_bush.pos.y
-        )
+        gc, gr = self.grid_map.cell_of(self.target_bush.pos.x, self.target_bush.pos.y)
 
-        # ── 若終點格是 blocked，BFS 找最近的可通行鄰格 ──────────────
         if self.grid_map.is_blocked(gc, gr):
             gc, gr = self._nearest_open_cell(gc, gr)
- 
-        # 找不到任何可通行格（極端情況：草叢被完全封死）
+
         if gc is None:
             self.eaten_bushes.add(id(self.target_bush))
             self.state = self.STATE_CHOOSE
             return Vector2(0, 0)
 
-        # 執行 pathfinding
         if self.pathfind_algo == "ASTAR":
-            path, cost = self.astar.search(sc, sr, gc, gr,
-                                           heuristic=self.heuristic)
+            path, cost = self.astar.search(sc, sr, gc, gr, heuristic=self.heuristic)
         else:
             path, cost = self.dijkstra.search(sc, sr, gc, gr)
 
         if not path:
-            # 找不到路徑（目標被封死）→ 跳過這個草叢
             self.eaten_bushes.add(id(self.target_bush))
             self.state = self.STATE_CHOOSE
             return Vector2(0, 0)
@@ -214,18 +289,12 @@ class Sheep(BaseAgent):
         self.follower.set_path(path)
         self.state = self.STATE_FOLLOW
         return Vector2(0, 0)
-    
+
     def _nearest_open_cell(self, col, row, max_radius=3):
-        """
-        BFS 從 (col, row) 向外擴展，找到最近的可通行格。
-        max_radius：最多往外找幾格（預設 3，約 192px）。
-        找不到則回傳 (None, None)。
-        """
         from collections import deque
         visited = set()
         queue = deque([(col, row, 0)])
         visited.add((col, row))
- 
         while queue:
             c, r, dist = queue.popleft()
             if dist > max_radius:
@@ -237,26 +306,19 @@ class Sheep(BaseAgent):
                 if (nc, nr) not in visited and self.grid_map.is_valid(nc, nr):
                     visited.add((nc, nr))
                     queue.append((nc, nr, dist+1))
- 
         return None, None
 
     def _update_following(self, dt):
-        """
-        用 PathFollower 取得本幀目標點，
-        用 SteeringBehaviors.arrive 計算 steering force。
-        """
         if self.follower is None:
             self.state = self.STATE_CHOOSE
             return Vector2(0, 0)
 
         target = self.follower.update(self.pos.x, self.pos.y)
 
-        # PathFollower 說已完成，或已夠接近草叢
         if target is None or self.follower.is_finished:
             self._enter_eating()
             return Vector2(0, 0)
 
-        # 額外檢查：已夠接近草叢本體（不只是路徑終點格）
         if self.pos.distance_to(self.target_bush.pos) < self.BUSH_REACH_R:
             self._enter_eating()
             return Vector2(0, 0)
@@ -267,24 +329,26 @@ class Sheep(BaseAgent):
         )
 
     def _update_eating(self, dt):
-        """停在草叢旁計時，時間到後標記草叢已吃並選下一個"""
         self._state_timer -= dt
-        # 吃草時緩慢減速停下
         self.vel *= (1 - 4.0 * dt)
 
         if self._state_timer <= 0:
-            # 吃完：標記此草叢
+            # 通知飽腹感系統
+            if self.satiation_tracker and self.target_bush:
+                self.satiation_tracker.register_eaten(self.target_bush)
+
+            # 通知 adaptive 系統「剛吃完」
+            if self.adaptive_system:
+                self.adaptive_system.update(dt=0, just_ate=True)
+
             self.eaten_bushes.add(id(self.target_bush))
-            self.target_bush = None
+            self.target_bush  = None
             self.current_path = []
-            self.state = self.STATE_CHOOSE
+            self.state        = self.STATE_CHOOSE
 
         return Vector2(0, 0)
 
     def _update_fleeing(self, dt, dog_pos):
-        """
-        短暫全速逃離狗，flee_duration 秒後切換回 CHOOSE_BUSH 並重新規劃。
-        """
         self._state_timer -= dt
 
         desired = self.pos - dog_pos
@@ -297,7 +361,6 @@ class Sheep(BaseAgent):
             force = Vector2(0, 0)
 
         if self._state_timer <= 0:
-            # flee 結束 → 重新選草叢（可能換一個，也可能同一個）
             self.current_path = []
             if self.follower:
                 self.follower.set_path([])
@@ -315,6 +378,11 @@ class Sheep(BaseAgent):
         self.current_path = []
         if self.follower:
             self.follower.set_path([])
+        # 通知 adaptive 系統
+        if self.adaptive_system:
+            self.adaptive_system.on_flee()
+        # 記錄 flee 事件
+        # dog_pos 此時不在這裡，flee 事件由 simulation.py 呼叫 log_flee
 
     def _enter_eating(self):
         self.state        = self.STATE_EAT
@@ -334,18 +402,16 @@ class Sheep(BaseAgent):
         return len(self.all_bushes) - len(self.eaten_bushes)
 
     # ------------------------------------------------------------------ #
-    #  繪製（保留 BaseAgent 的 draw，額外疊加狀態資訊）                      #
+    #  繪製                                                                #
     # ------------------------------------------------------------------ #
 
     def draw(self, screen, show_debug=True):
-        # 呼叫父類別的軌跡 + 本體繪製
         super().draw(screen, show_debug)
 
         if not show_debug:
             return
 
-        # 路徑視覺化（金色連線）—— 只在 NAVIGATION 模式下顯示
-        # STEERING / KINEMATIC 模式下 follower 可能殘留舊路徑，不應顯示
+        # 路徑視覺化
         if (self.follower and len(self.follower.path) >= 2
                 and self.state in (self.STATE_FOLLOW, self.STATE_EAT,
                                    self.STATE_CHOOSE, self.STATE_PATH)):
@@ -356,7 +422,7 @@ class Sheep(BaseAgent):
                 node_color=(200, 200, 50)
             )
 
-        # 狀態文字（只在 NAVIGATION 狀態機的狀態下顯示）
+        # 狀態文字
         nav_states = {self.STATE_CHOOSE, self.STATE_PATH, self.STATE_FOLLOW,
                       self.STATE_EAT, self.STATE_FLEE, self.STATE_WIN}
         if self.state in nav_states:
@@ -373,13 +439,13 @@ class Sheep(BaseAgent):
             label = font.render(self.state, True, color)
             screen.blit(label, (int(self.pos.x) - 30, int(self.pos.y) - 35))
 
-        # 目標草叢連線（虛線用短線段模擬）
+        # 目標草叢連線
         if self.target_bush and self.state in (self.STATE_FOLLOW, self.STATE_EAT):
             tx, ty = int(self.target_bush.pos.x), int(self.target_bush.pos.y)
             sx, sy = int(self.pos.x), int(self.pos.y)
             pygame.draw.line(screen, (150, 255, 150), (sx, sy), (tx, ty), 1)
 
-        # PANIC_RADIUS 圓（淡紅色）
+        # PANIC_RADIUS 圓
         pygame.draw.circle(screen, (255, 80, 80),
                            (int(self.pos.x), int(self.pos.y)),
                            int(self.PANIC_RADIUS), 1)
@@ -395,3 +461,12 @@ class Sheep(BaseAgent):
                              (int(self.pos.x) - bar_w//2,
                               int(self.pos.y) - 45,
                               int(bar_w * progress), 5))
+
+        # 飽腹感小標籤（在目標草叢旁顯示）
+        if self.target_bush and self.satiation_tracker and show_debug:
+            sat = self.satiation_tracker.satiation(self.target_bush)
+            count = self.satiation_tracker.eaten_count(self.target_bush)
+            sfont = pygame.font.SysFont("Arial", 11)
+            sat_label = sfont.render(f"sat={sat:.2f}(×{count})", True, (255, 220, 100))
+            screen.blit(sat_label, (int(self.target_bush.pos.x) - 25,
+                                     int(self.target_bush.pos.y) - 32))

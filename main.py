@@ -7,6 +7,7 @@ from simulation import Simulation
   1 / 2 / 3  → 切換模式（Kinematic / Steering / Navigation）
   P          → 循環切換 pathfinding 算法
   F          → 切換 path following 策略
+  T          → 循環切換決策架構（RANDOM → RULE → UTILITY → ADAPTIVE）
   G          → 切換 Grid debug 視覺化
   C          → 切換 Clearance heatmap
   W          → 切換 Waypoint Graph 視覺化
@@ -48,6 +49,7 @@ def main():
                 elif event.key == pygame.K_w: sim.toggle_waypoint()
                 elif event.key == pygame.K_p: sim.cycle_algo()
                 elif event.key == pygame.K_f: sim.cycle_follower()
+                elif event.key == pygame.K_t: sim.cycle_decision_arch()
                 elif event.key == pygame.K_r: sim.set_mode(sim.mode) 
         
         # 更新邏輯
