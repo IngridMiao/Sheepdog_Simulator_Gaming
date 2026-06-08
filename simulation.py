@@ -1,34 +1,4 @@
 """
-simulation.py  (Assignment 2 重構版)
-
-統一管理所有實體與 navigation 系統，每幀協調：
-  1. 牧羊犬：維持 Assignment 1 的 steering arrive（滑鼠控制）
-  2. 羊：    狀態機 + pathfinding（A* / Dijkstra）+ path following
-  3. 障礙物：不變
-  4. 勝負判定
-
-新增的按鍵：
-  1        → Kinematic 模式（Assignment 1 相容，僅供示範）
-  2        → Steering  模式（Assignment 1 相容，僅供示範）
-  3        → Navigation 模式（Assignment 2 主模式）
-  G        → 切換 Grid debug 視覺化
-  W        → 切換 Waypoint Graph 視覺化
-  C        → 切換 clearance heatmap
-  P        → 切換算法（A* Euclidean → A* Clearance → Dijkstra → 循環）
-  F        → 切換 path following 策略（Look-ahead ↔ Nearest-node）
-  D        → 切換 debug 資訊（agent 狀態、路徑等）
-  R        → 重置場景
-
-地圖設計說明（Assignment 2 新地圖）：
-  原本的地圖障礙物太少、路徑太直，不適合展示 pathfinding 差異。
-  新地圖加入更多石牆段落，製造 3 條可行路線（上路、中路、下路），
-  讓 Dijkstra 和 A* 在不同 heuristic 下走出可觀察到的不同路徑。
-
-  草叢位置刻意安排在不同象限，羊必須穿越障礙才能到達每一個。
-"""
-
-"""
-simulation.py  (Assignment 2 重構版)
 
 統一管理所有實體與 navigation 系統，每幀協調：
   1. 牧羊犬：維持 Assignment 1 的 steering arrive（滑鼠控制）

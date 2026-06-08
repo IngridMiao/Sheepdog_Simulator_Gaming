@@ -1,25 +1,4 @@
 """
-entity/sheep.py  (Assignment 2 修改版)
-
-新增狀態機，驅動羊的 pathfinding 行為：
-
-  CHOOSE_BUSH  → 從未吃過的草叢中 random 選一個，觸發路徑規劃
-  PATHFINDING  → 呼叫 A* 計算路徑（同幀完成，不需等待）
-  FOLLOWING    → 用 PathFollower + SteeringBehaviors.arrive 沿路徑移動
-  EATING       → 停在草叢旁 eat_duration 秒，計時完成後標記草叢為已吃
-  FLEEING      → 短暫 flee 離開狗，flee_duration 秒後回到 CHOOSE_BUSH
-  WIN          → 吃完所有草叢，羊獲勝
-
-與 Assignment 1 的差異：
-  - 移除直接的 flee/wander 力（那些留給 simulation.py 的 STEERING 模式）
-  - 加入 nav_system 參考（GridMap + AStar + PathFollower）
-  - 每次 flee 結束後重新選草叢並重新規劃，不沿用舊路徑
-  - 保留 draw() 介面不變，額外增加狀態文字 debug 顯示
-"""
-
-"""
-entity/sheep.py  (Assignment 3 修改版)
-
 在 Assignment 2 的狀態機基礎上，新增三種決策架構來選擇目標草叢：
 
   RANDOM   ── 原版隨機選擇（baseline）
